@@ -6,7 +6,12 @@ import * as mm from 'music-metadata-browser';
 import * as THREE from 'three';
 
 const DROPBOX_APP_KEY = process.env.APP_KEY;
-
+// Place this at the top of your file or in a separate types file
+declare module 'react' {
+    interface InputHTMLAttributes<T> extends HTMLAttributes<T> {
+        webkitdirectory?: boolean;
+    }
+}
 interface AudioFile {
     name: string;
     path: string;
@@ -257,7 +262,7 @@ const Page: React.FC = () => {
             setup: (scene) => {
                 const geometry = new THREE.BufferGeometry();
                 const material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
-                visualizerMeshRef.current = new THREE.Line(geometry, material);
+                visualizerMeshRef.current = new THREE.Mesh(geometry, material);
                 scene.add(visualizerMeshRef.current);
             },
             update: (audioData) => {
@@ -279,7 +284,7 @@ const Page: React.FC = () => {
             setup: (scene) => {
                 const geometry = new THREE.BufferGeometry();
                 const material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
-                visualizerMeshRef.current = new THREE.Line(geometry, material);
+                visualizerMeshRef.current = new THREE.Mesh(geometry, material);
                 scene.add(visualizerMeshRef.current);
             },
             update: (audioData) => {
@@ -464,7 +469,23 @@ const Page: React.FC = () => {
             handleNextTrack();
         }
     };
-
+    useEffect(() => {
+        return () => {
+            // Cleanup function
+            if (audioRef.current) {
+                audioRef.current.pause();
+                if (audioRef.current.src.startsWith('blob:')) {
+                    URL.revokeObjectURL(audioRef.current.src);
+                }
+            }
+            if (nextAudioRef.current) {
+                nextAudioRef.current.pause();
+                if (nextAudioRef.current.src.startsWith('blob:')) {
+                    URL.revokeObjectURL(nextAudioRef.current.src);
+                }
+            }
+        };
+    }, []);
     const startCrossfade = () => {
         if (nextTrack && audioRef.current && nextAudioRef.current) {
             const fadeOutDuration = crossfadeTime * 1000;
@@ -482,7 +503,19 @@ const Page: React.FC = () => {
                     clearInterval(crossfadeIntervalRef.current!);
                     crossfadeIntervalRef.current = null;
                     if (audioRef.current) audioRef.current.pause();
-                    [audioRef.current, nextAudioRef.current] = [nextAudioRef.current, audioRef.current];
+
+                    // Instead of swapping refs, update the current audio
+                    if (audioRef.current && nextAudioRef.current) {
+                        audioRef.current.src = nextAudioRef.current.src;
+                        audioRef.current.currentTime = nextAudioRef.current.currentTime;
+                        audioRef.current.volume = volume;
+                        audioRef.current.play();
+
+                        // Reset the next audio
+                        nextAudioRef.current.pause();
+                        nextAudioRef.current.src = '';
+                    }
+
                     setCurrentTrack(nextTrack);
                     setNextTrack(null);
                 }
@@ -946,8 +979,7 @@ const Page: React.FC = () => {
                         <input
                             type="file"
                             ref={fileInputRef}
-                            webkitdirectory=""
-                            directory=""
+                            webkitdirectory={true}
                             onChange={handleFileImport}
                             style={{ display: 'none' }}
                         />
@@ -1144,13 +1176,15 @@ const Page: React.FC = () => {
                     </Button>
                 </div>
             )}
-            <audio
+            <audio ref={audioRef} crossOrigin='anonymous' src={currentTrack?.path} />
+            <audio ref={nextAudioRef} crossOrigin='anonymous' src={nextTrack?.path} />
+            {/* <audio
                 crossOrigin='anonymous'
                 ref={audioRef}
                 onTimeUpdate={handleTimeUpdate}
                 onEnded={handleNextTrack}
             />
-            <audio ref={nextAudioRef} crossOrigin='anonymous' />
+            <audio ref={nextAudioRef} crossOrigin='anonymous' /> */}
             <canvas ref={canvasRef} className="absolute bottom-24 left-4 w-64 h-64" />
         </div>
     );
