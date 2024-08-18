@@ -1201,7 +1201,7 @@ const Page: React.FC = () => {
                 onTimeUpdate={handleTimeUpdate}
                 onEnded={handleNextTrack}
                 crossOrigin='anonymous' />
-            <canvas width={500} height={500} ref={canvasRef} className="absolute pointer-events-none w-screen h-full bottom-0" />
+            {/* <canvas width={500} height={500} ref={canvasRef} className="absolute pointer-events-none w-screen h-full bottom-0" /> */}
         </div>
     );
 };
