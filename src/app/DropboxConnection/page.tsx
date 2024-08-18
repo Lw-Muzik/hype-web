@@ -10,7 +10,7 @@ declare module 'react' {
         directory?: string;
     }
 }
-const DROPBOX_APP_KEY = process.env.APP_KEY;
+const DROPBOX_APP_KEY = "1d0mou7l0x19mas";
 // // Place this at the top of your file or in a separate types file
 
 interface AudioFile {
