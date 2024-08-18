@@ -262,7 +262,7 @@ const Page: React.FC = () => {
             name: 'Wave',
             setup: (scene) => {
                 const geometry = new THREE.BufferGeometry();
-                const material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+                const material = new THREE.LineBasicMaterial({ color: 0x00f000 });
                 visualizerMeshRef.current = new THREE.Mesh(geometry, material);
                 scene.add(visualizerMeshRef.current);
             },
@@ -590,7 +590,7 @@ const Page: React.FC = () => {
     const connectToDropbox = () => {
         const dbx = new DropboxAuth({ fetch: fetch });
         dbx.setClientId(DROPBOX_APP_KEY as string);
-        dbx.getAuthenticationUrl('http://localhost:3000/DropboxConnection').then((authUrl) => {
+        dbx.getAuthenticationUrl('https://hypeweb.netlify.app/DropboxConnection').then((authUrl) => {
             window.location.href = authUrl as string;
         });
     };
