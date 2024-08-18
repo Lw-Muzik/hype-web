@@ -65,7 +65,7 @@ const MaterialSlider: React.FC<{
 }> = ({ min, max, value, onChange, className }) => (
     <div className={`relative w-full h-1 bg-gray-600 rounded-full ${className}`}>
         <div
-            className="absolute top-0 left-0 h-full bg-blue-500 rounded-full"
+            className="absolute top-0 left-0 h-full bg-blue-700 rounded-full"
             style={{ width: `${((value - min) / (max - min)) * 100}%` }}
         />
         <input
@@ -78,7 +78,7 @@ const MaterialSlider: React.FC<{
             className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
         />
         <div
-            className="absolute top-1/2 w-4 h-4 bg-blue-500 rounded-full shadow-md transform -translate-y-1/2"
+            className="absolute top-1/2 w-4 h-4 bg-blue-700 rounded-full shadow-md transform -translate-y-1/2"
             style={{ left: `calc(${((value - min) / (max - min)) * 100}% - 8px)` }}
         />
     </div>
@@ -428,18 +428,30 @@ const Page: React.FC = () => {
                 const bufferLength = analyserNodeRef.current.frequencyBinCount;
                 const dataArray = new Uint8Array(bufferLength);
                 analyserNodeRef.current.getByteFrequencyData(dataArray);
-
+                canvasRef.current.setAttribute("width", `${window.innerWidth}`);
+                canvasRef.current.setAttribute("height", `${window.innerHeight}`);
+                window.onresize = () => {
+                    canvasRef.current?.setAttribute("width", `${window.innerWidth}`);
+                    canvasRef.current?.setAttribute("height", `${window.innerHeight}`);
+                }
                 const ctx = canvasRef.current.getContext('2d');
                 if (ctx) {
-                    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
 
+                    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+                    ctx.fillStyle = "#2D36E7"
                     const barWidth = canvasRef.current.width / bufferLength;
                     let x = 0;
                     for (let i = 0; i < bufferLength; i++) {
-                        const barHeight = dataArray[i] / 255 * canvasRef.current.height;
-                        ctx.fillStyle = `hsl(${i / bufferLength * 360}, 100%, 50%)`;
-                        ctx.fillRect(x, canvasRef.current.height - barHeight, barWidth, barHeight);
-                        x += barWidth + 1;
+                        let value = dataArray[i] / 200;
+                        let barX = i * 3;//This works on bar spacing
+                        let barWidth = 2;//This handles the barWidth
+                        let height = (canvasRef.current.height) * value;
+                        let barHeight = canvasRef.current.height - height - 1;
+                        /**
+                         * Now lets draw the bars basing on the array length
+                         * following this format CanvasRect.fillRect(x: number, y: number, w: number, h: number): void
+                         *              */
+                        ctx.fillRect(barX, barHeight, barWidth, height);
                     }
                 }
             }
@@ -1027,13 +1039,13 @@ const Page: React.FC = () => {
                         ))}
                     </ul>
                     {/* ui to render our 3d code */}
-                    {showVisualizer && (
+                    {/* {showVisualizer && (
                         <div
                             ref={visualizerContainerRef}
                             className="absolute inset-0 pointer-events-none"
                             style={{ zIndex: 1 }}
                         ></div>
-                    )}
+                    )} */}
                     {/* end of 3D rendering */}
                 </div>
             </div>
@@ -1073,16 +1085,16 @@ const Page: React.FC = () => {
                         </Button>
                         <Button onClick={handleNextTrack}><SkipForward size={20} /></Button>
                     </div>
-                    <div className="flex items-center mt-4 md:mt-0">
-                        <Volume2 size={20} className="mr-2" />
+                    <div className="flex items-center mt-4 sm:mt-0">
+                        <Volume2 size={20} className="mr-2" />{" "}
                         <MaterialSlider
                             min={0}
                             max={1}
                             value={volume}
                             onChange={handleVolumeChange}
-                            className="w-96"
+                            className="w-[300px]"
                         />
-                        <span className="text-white dark:text-muted">{Math.floor(volume * 100)}%</span>
+                        <span className="text-black dark:text-white">{"   "} {Math.floor(volume * 100)}%</span>
                     </div>
                     <Button onClick={() => setShowSettings(!showSettings)} className="mt-4 md:mt-0">
                         <Settings size={20} />
@@ -1189,7 +1201,7 @@ const Page: React.FC = () => {
                 onTimeUpdate={handleTimeUpdate}
                 onEnded={handleNextTrack}
                 crossOrigin='anonymous' />
-            <canvas ref={canvasRef} className="absolute pointer-events-none w-full h-64 bottom-0" />
+            <canvas width={500} height={500} ref={canvasRef} className="absolute pointer-events-none w-screen h-full bottom-0" />
         </div>
     );
 };
