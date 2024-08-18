@@ -7,7 +7,7 @@ import * as THREE from 'three';
 declare module 'react' {
     interface InputHTMLAttributes<T> extends HTMLAttributes<T> {
         webkitdirectory?: string;
-        directory?:string;
+        directory?: string;
     }
 }
 const DROPBOX_APP_KEY = process.env.APP_KEY;
@@ -63,7 +63,7 @@ const MaterialSlider: React.FC<{
     onChange: (value: number) => void;
     className?: string;
 }> = ({ min, max, value, onChange, className }) => (
-    <div className={`relative w-full h-2 bg-gray-600 rounded-full ${className}`}>
+    <div className={`relative w-full h-1 bg-gray-600 rounded-full ${className}`}>
         <div
             className="absolute top-0 left-0 h-full bg-blue-500 rounded-full"
             style={{ width: `${((value - min) / (max - min)) * 100}%` }}
@@ -537,7 +537,7 @@ const Page: React.FC = () => {
                 await audioContextRef.current.resume();
             }
 
-            let url = track.path;
+            let url = track ? track.path : "";
 
             if (currentSource === 'dropbox' && !cacheRef.current[track.path]) {
                 const accessToken = localStorage.getItem('dropboxAccessToken');
@@ -566,7 +566,6 @@ const Page: React.FC = () => {
                     setIsPlaying(true);
                 }
             }
-
             // Prepare the next track
             const nextIndex = (index + 1) % audioFiles.length;
             setNextTrack(audioFiles[nextIndex]);
@@ -1081,8 +1080,9 @@ const Page: React.FC = () => {
                             max={1}
                             value={volume}
                             onChange={handleVolumeChange}
-                            className="w-[20rem]"
+                            className="w-96"
                         />
+                        <span className="text-white dark:text-muted">{Math.floor(volume * 100)}%</span>
                     </div>
                     <Button onClick={() => setShowSettings(!showSettings)} className="mt-4 md:mt-0">
                         <Settings size={20} />
@@ -1178,16 +1178,18 @@ const Page: React.FC = () => {
                     </Button>
                 </div>
             )}
-            <audio ref={audioRef} crossOrigin='anonymous' src={currentTrack?.path} />
-            <audio ref={nextAudioRef} crossOrigin='anonymous' src={nextTrack?.path} />
-            {/* <audio
+
+            <audio
                 crossOrigin='anonymous'
                 ref={audioRef}
                 onTimeUpdate={handleTimeUpdate}
                 onEnded={handleNextTrack}
             />
-            <audio ref={nextAudioRef} crossOrigin='anonymous' /> */}
-            <canvas ref={canvasRef} className="absolute bottom-24 left-4 w-64 h-64" />
+            <audio ref={nextAudioRef}
+                onTimeUpdate={handleTimeUpdate}
+                onEnded={handleNextTrack}
+                crossOrigin='anonymous' />
+            <canvas ref={canvasRef} className="absolute pointer-events-none w-full h-64 bottom-0" />
         </div>
     );
 };
