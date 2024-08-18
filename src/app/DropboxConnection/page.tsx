@@ -1,10 +1,11 @@
 "use client"
 import React, { useState, useEffect, useRef } from 'react';
 import { Dropbox, DropboxAuth } from 'dropbox';
-import { Play, Pause, SkipBack, SkipForward, Volume2, Settings, Folder, Save, Loader, Moon, Sun } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, BarChart2, Volume2, Settings, Folder, Save, Loader, Moon, Sun, Upload, File, LucideUpload } from 'lucide-react';
 import * as mm from 'music-metadata-browser';
+import * as THREE from 'three';
 
-const DROPBOX_APP_KEY = "YOUR_DROPBOX_APP_KEY";
+const DROPBOX_APP_KEY = process.env.APP_KEY;
 
 interface AudioFile {
     name: string;
@@ -16,7 +17,12 @@ interface AudioFile {
     imageUrl?: string;
     duration?: number;
 }
-
+// threejs visualizer interface
+interface VisualizerOption {
+    name: string;
+    setup: (scene: THREE.Scene) => void;
+    update: (audioData: Uint8Array) => void;
+}
 interface DropboxFolder {
     name: string;
     path: string;
@@ -26,7 +32,16 @@ interface Preset {
     name: string;
     values: number[];
 }
+// local files interface
+interface LocalFolder {
+    name: string;
+    files: File[];
+}
+interface LocalAudioFile extends AudioFile {
+    file: File;
+}
 
+// 
 const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({ children, className, ...props }) => (
     <button
         className={`px-4 py-2 rounded-full bg-blue-500 dark:bg-blue-600 text-white hover:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 ${className}`}
@@ -51,6 +66,7 @@ const MaterialSlider: React.FC<{
             type="range"
             min={min}
             max={max}
+            step={0.01}
             value={value}
             onChange={(e) => onChange(Number(e.target.value))}
             className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
@@ -83,16 +99,66 @@ const Page: React.FC = () => {
     const [showSettings, setShowSettings] = useState<boolean>(false);
     const [equalizer, setEqualizer] = useState<number[]>(new Array(10).fill(0));
     const [roomEffect, setRoomEffect] = useState<string>('none');
+
     const [presets, setPresets] = useState<Preset[]>([
         { name: 'Flat', values: new Array(10).fill(0) },
         { name: 'Bass Boost', values: [6, 5, 4, 3, 1, 0, 0, 0, 0, 0] },
         { name: 'Treble Boost', values: [0, 0, 0, 0, 0, 2, 3, 4, 5, 6] },
+        { name: 'Normal', values: [3.3, 2.0, 1.0, 0.0, 0.0, 1.0, 2.3, 2.6, 2.0, 3.0], },
+
+        { name: 'Flat', values: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], },
+
+        { name: 'Loud', values: [-2.9, -2.9, 2.4, 3.6, 4.7, 4.7, 6.0, 6.0, 3.0, 3.0], },
+
+        { name: 'Pop', values: [1.5, 4.5, 5.8, 3.0, 1.5, 0.0, 0.0, 0.0, 1.5, 3.0], },
+
+        { name: 'Techno', values: [5.8, 5.8, 0.1, -2.8, -2.2, 0.0, 3.6, 7.4, 7.7, 7.5], },
+
+        { name: 'Dance', values: [5.8, 3.1, 2.1, 0.0, 0.0, -2.6, -2.0, -2.2, -0.6, 0.1], },
+
+        { name: 'Bass', values: [7.5, 5.8, 3.9, 0.0, -1.5, -0.0, 0.0, 0.0, 0.0, 0.0], },
+
+        { name: 'Rock', values: [5.8, 3.2, 1.3, -3.0, -2.3, 2.2, 3.6, 5.8, 5.8, 5.8], },
+
+        { name: 'Reggae', values: [5.8, 5.8, 3.0, 0.0, -1.5, -1.5, -0.0, 1.5, 5.8, 5.8], },
+
+        { name: 'SoftTreble', values: [0.0, 0.0, -4.4, -4.5, -4.5, -4.5, -3.0, -0.0, 4.5, 4.5], },
+
+        { name: 'SoftBass', values: [3.0, 3.0, 3.0, 0.0, -3.0, -3.0, -0.0, 0.0, 0.0, 0.0], },
+
+        { name: 'Classic', values: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -3.0, -3.0, -3.0, -4.5], },
+
+        { name: 'Treble', values: [13.5, -3.0, -3.0, -3.0, -1.5, -1.5, -0.0, 6.3, 9.6, 12.3], },
+
+        { name: 'Live', values: [-4.5, -3.8, 2.2, 2.2, 2.2, 2.2, 2.1, 1.5, 1.5, 1.5], },
+
+        { name: 'Folk', values: [-4.5, -4.5, -1.5, 1.5, 4.5, 4.5, 1.5, 0.0, -4.5, -6.0], },
+
+        { name: 'BassTreble', values: [5.8, 5.8, 3.0, 0.0, -1.5, 0.0, 1.5, 1.5, 5.8, 5.8], }
     ]);
+    const [localFolders, setLocalFolders] = useState<LocalFolder[]>([]);
+    const [localAudioFiles, setLocalAudioFiles] = useState<LocalAudioFile[]>([]);
+    const [currentSource, setCurrentSource] = useState<'dropbox' | 'local'>('dropbox');
+
+
     const [currentPreset, setCurrentPreset] = useState<string>('Flat');
     const [newPresetName, setNewPresetName] = useState<string>('');
     const [isLoading, setIsLoading] = useState<boolean>(false);
-    const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+    const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
 
+    // visualizer switchers
+    const [currentVisualizer, setCurrentVisualizer] = useState<string>('bars');
+    const [showVisualizer, setShowVisualizer] = useState<boolean>(true);
+    const [audioContextReady, setAudioContextReady] = useState<boolean>(false);
+    const [nextTrack, setNextTrack] = useState<AudioFile | null>(null);
+    // 
+    // -> visualizer options
+    const visualizerContainerRef = useRef<HTMLDivElement>(null);
+    const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+    const sceneRef = useRef<THREE.Scene | null>(null);
+    const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+    const visualizerMeshRef = useRef<THREE.Mesh | null>(null);
+    // --> end
     const audioRef = useRef<HTMLAudioElement>(null);
     const nextAudioRef = useRef<HTMLAudioElement>(null);
     const cacheRef = useRef<{ [key: string]: string }>({});
@@ -102,7 +168,215 @@ const Page: React.FC = () => {
     const convolutionNodeRef = useRef<ConvolverNode | null>(null);
     const analyserNodeRef = useRef<AnalyserNode | null>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    // ref to handle file upload
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    // ... (previous refs remain the same)
+    const crossfadeIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    // trigger the 3D engine to activate
+    useEffect(() => {
+        if (visualizerContainerRef.current && !rendererRef.current) {
+            const width = visualizerContainerRef.current.clientWidth;
+            const height = visualizerContainerRef.current.clientHeight;
 
+            rendererRef.current = new THREE.WebGLRenderer({ alpha: true });
+            rendererRef.current.setSize(width, height);
+            visualizerContainerRef.current.appendChild(rendererRef.current.domElement);
+
+            sceneRef.current = new THREE.Scene();
+            cameraRef.current = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+            cameraRef.current.position.z = 5;
+
+            visualizers[currentVisualizer].setup(sceneRef.current);
+
+            const animate = () => {
+                requestAnimationFrame(animate);
+                if (analyserNodeRef.current && sceneRef.current && cameraRef.current && rendererRef.current) {
+                    const dataArray = new Uint8Array(analyserNodeRef.current.frequencyBinCount);
+                    analyserNodeRef.current.getByteFrequencyData(dataArray);
+
+                    visualizers[currentVisualizer].update(dataArray);
+
+                    rendererRef.current.render(sceneRef.current, cameraRef.current);
+                }
+            };
+            animate();
+        }
+
+        return () => {
+            if (rendererRef.current && visualizerContainerRef.current) {
+                // Check if the renderer's DOM element is still a child of the container
+                if (visualizerContainerRef.current.contains(rendererRef.current.domElement)) {
+                    visualizerContainerRef.current.removeChild(rendererRef.current.domElement);
+                }
+                rendererRef.current.dispose();
+                rendererRef.current = null;
+            }
+            if (sceneRef.current) {
+                // Clear the scene
+                while (sceneRef.current.children.length > 0) {
+                    sceneRef.current.remove(sceneRef.current.children[0]);
+                }
+                sceneRef.current = null;
+            }
+            if (visualizerMeshRef.current) {
+                visualizerMeshRef.current.geometry.dispose();
+                (visualizerMeshRef.current.material as THREE.Material).dispose();
+                visualizerMeshRef.current = null;
+            }
+        };
+    }, [currentVisualizer])
+
+    // visualisation settings
+
+    const visualizers: { [key: string]: VisualizerOption } = {
+        bars: {
+            name: 'Bars',
+            setup: (scene) => {
+                const geometry = new THREE.BufferGeometry();
+                const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
+                visualizerMeshRef.current = new THREE.Mesh(geometry, material);
+                scene.add(visualizerMeshRef.current);
+            },
+            update: (audioData) => {
+                if (visualizerMeshRef.current) {
+                    const positions = [];
+                    for (let i = 0; i < audioData.length; i++) {
+                        const x = (i / audioData.length) * 10 - 5;
+                        const y = (audioData[i] / 255) * 5;
+                        positions.push(x, y, 0);
+                        positions.push(x, 0, 0);
+                    }
+                    const geometry = new THREE.BufferGeometry();
+                    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                    visualizerMeshRef.current.geometry = geometry;
+                }
+            },
+        },
+        wave: {
+            name: 'Wave',
+            setup: (scene) => {
+                const geometry = new THREE.BufferGeometry();
+                const material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+                visualizerMeshRef.current = new THREE.Line(geometry, material);
+                scene.add(visualizerMeshRef.current);
+            },
+            update: (audioData) => {
+                if (visualizerMeshRef.current) {
+                    const positions = [];
+                    for (let i = 0; i < audioData.length; i++) {
+                        const x = (i / audioData.length) * 10 - 5;
+                        const y = (audioData[i] / 255) * 2 - 1;
+                        positions.push(x, y, 0);
+                    }
+                    const geometry = new THREE.BufferGeometry();
+                    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                    visualizerMeshRef.current.geometry = geometry;
+                }
+            },
+        },
+        circular: {
+            name: 'Circular',
+            setup: (scene) => {
+                const geometry = new THREE.BufferGeometry();
+                const material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+                visualizerMeshRef.current = new THREE.Line(geometry, material);
+                scene.add(visualizerMeshRef.current);
+            },
+            update: (audioData) => {
+                if (visualizerMeshRef.current) {
+                    const positions = [];
+                    for (let i = 0; i < audioData.length; i++) {
+                        const angle = (i / audioData.length) * Math.PI * 2;
+                        const radius = (audioData[i] / 255) * 2 + 1;
+                        const x = Math.cos(angle) * radius;
+                        const y = Math.sin(angle) * radius;
+                        positions.push(x, y, 0);
+                    }
+                    const geometry = new THREE.BufferGeometry();
+                    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                    visualizerMeshRef.current.geometry = geometry;
+                }
+            },
+        },
+    };
+    useEffect(() => {
+        if (audioContextReady && audioRef.current && !audioContextRef.current) {
+            initializeAudioContext();
+        }
+    }, [audioContextReady]);
+
+    const initializeAudioContext = () => {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        sourceNodeRef.current = audioContextRef.current.createMediaElementSource(audioRef.current!);
+
+        const frequencies = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+        gainNodesRef.current = frequencies.map(freq => {
+            const filter = audioContextRef.current!.createBiquadFilter();
+            filter.type = 'peaking';
+            filter.frequency.value = freq;
+            filter.Q.value = 1;
+            filter.gain.value = 0;
+            return filter;
+        });
+
+        sourceNodeRef.current.connect(gainNodesRef.current[0]);
+        gainNodesRef.current.reduce((prev, curr) => {
+            prev.connect(curr);
+            return curr;
+        });
+
+        analyserNodeRef.current = audioContextRef.current.createAnalyser();
+        analyserNodeRef.current.fftSize = 256;
+        gainNodesRef.current[gainNodesRef.current.length - 1].connect(analyserNodeRef.current);
+        analyserNodeRef.current.connect(audioContextRef.current.destination);
+
+        // Initialize visualizer
+        if (visualizerContainerRef.current && !rendererRef.current) {
+            initializeVisualizer();
+        }
+    };
+
+    const initializeVisualizer = () => {
+        const width = visualizerContainerRef.current!.clientWidth;
+        const height = visualizerContainerRef.current!.clientHeight;
+
+        rendererRef.current = new THREE.WebGLRenderer({ alpha: true });
+        rendererRef.current.setSize(width, height);
+        visualizerContainerRef.current!.appendChild(rendererRef.current.domElement);
+
+        sceneRef.current = new THREE.Scene();
+        cameraRef.current = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+        cameraRef.current.position.z = 5;
+
+        visualizers[currentVisualizer].setup(sceneRef.current);
+
+        const animate = () => {
+            requestAnimationFrame(animate);
+            if (analyserNodeRef.current && sceneRef.current && cameraRef.current && rendererRef.current) {
+                const dataArray = new Uint8Array(analyserNodeRef.current.frequencyBinCount);
+                analyserNodeRef.current.getByteFrequencyData(dataArray);
+
+                visualizers[currentVisualizer].update(dataArray);
+
+                rendererRef.current.render(sceneRef.current, cameraRef.current);
+            }
+        };
+        animate();
+    };
+
+    const changeVisualizer = (visualizerName: string) => {
+        if (sceneRef.current) {
+            if (visualizerMeshRef.current) {
+                sceneRef.current.remove(visualizerMeshRef.current);
+                visualizerMeshRef.current.geometry.dispose();
+                (visualizerMeshRef.current.material as THREE.Material).dispose();
+                visualizerMeshRef.current = null;
+            }
+            setCurrentVisualizer(visualizerName);
+            visualizers[visualizerName].setup(sceneRef.current);
+        }
+    };
+    // end of visual settings
 
     useEffect(() => {
         checkDropboxConnection();
@@ -140,8 +414,9 @@ const Page: React.FC = () => {
             analyserNodeRef.current.fftSize = 256;
             gainNodesRef.current[gainNodesRef.current.length - 1].connect(analyserNodeRef.current);
             analyserNodeRef.current.connect(audioContextRef.current.destination);
-        }
 
+        }
+        audioContextRef.current?.resume();
         const animate = () => {
             if (analyserNodeRef.current && canvasRef.current) {
                 const bufferLength = analyserNodeRef.current.frequencyBinCount;
@@ -166,7 +441,111 @@ const Page: React.FC = () => {
         };
         animate();
     }, [audioRef.current]);
+    // controls
+    useEffect(() => {
+        if (audioRef.current) {
+            audioRef.current.addEventListener('timeupdate', handleTimeUpdate);
+            audioRef.current.addEventListener('ended', handleTrackEnd);
+        }
+        return () => {
+            if (audioRef.current) {
+                audioRef.current.removeEventListener('timeupdate', handleTimeUpdate);
+                audioRef.current.removeEventListener('ended', handleTrackEnd);
+            }
+        };
+    }, [audioRef.current]);
 
+
+
+    const handleTrackEnd = () => {
+        if (nextTrack) {
+            playTrack(nextTrack, audioFiles.findIndex(file => file.path === nextTrack.path));
+        } else {
+            handleNextTrack();
+        }
+    };
+
+    const startCrossfade = () => {
+        if (nextTrack && audioRef.current && nextAudioRef.current) {
+            const fadeOutDuration = crossfadeTime * 1000;
+            const fadeInterval = 50;
+            let currentTime = 0;
+
+            crossfadeIntervalRef.current = setInterval(() => {
+                currentTime += fadeInterval;
+                const progress = currentTime / fadeOutDuration;
+
+                if (audioRef.current) audioRef.current.volume = Math.max(volume * (1 - progress), 0);
+                if (nextAudioRef.current) nextAudioRef.current.volume = Math.min(volume * progress, volume);
+
+                if (currentTime >= fadeOutDuration) {
+                    clearInterval(crossfadeIntervalRef.current!);
+                    crossfadeIntervalRef.current = null;
+                    if (audioRef.current) audioRef.current.pause();
+                    [audioRef.current, nextAudioRef.current] = [nextAudioRef.current, audioRef.current];
+                    setCurrentTrack(nextTrack);
+                    setNextTrack(null);
+                }
+            }, fadeInterval);
+
+            nextAudioRef.current.play();
+        }
+    };
+
+    const playTrack = async (track: AudioFile, index: number) => {
+        if (!audioContextReady) {
+            setAudioContextReady(true);
+        }
+        setIsLoading(true);
+
+        try {
+            if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+                await audioContextRef.current.resume();
+            }
+
+            let url = track.path;
+
+            if (currentSource === 'dropbox' && !cacheRef.current[track.path]) {
+                const accessToken = localStorage.getItem('dropboxAccessToken');
+                if (accessToken) {
+                    const dbx = new Dropbox({ accessToken });
+                    const { result } = await dbx.filesDownload({ path: track.path });
+                    const blob = (result as any).fileBlob;
+                    url = URL.createObjectURL(blob);
+                    cacheRef.current[track.path] = url;
+                }
+            }
+
+            if (isPlaying && audioRef.current) {
+                // Prepare next track for crossfade
+                if (nextAudioRef.current) {
+                    nextAudioRef.current.src = url;
+                    nextAudioRef.current.volume = 0;
+                    setNextTrack(track);
+                }
+            } else {
+                if (audioRef.current) {
+                    audioRef.current.src = url;
+                    audioRef.current.volume = volume;
+                    await audioRef.current.play();
+                    setCurrentTrack(track);
+                    setIsPlaying(true);
+                }
+            }
+
+            // Prepare the next track
+            const nextIndex = (index + 1) % audioFiles.length;
+            setNextTrack(audioFiles[nextIndex]);
+        } catch (error) {
+            console.error('Error playing track:', error);
+            setError('Failed to play the track. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+
+    // ---------------
     const checkDropboxConnection = () => {
         const accessToken = localStorage.getItem('dropboxAccessToken');
         if (accessToken) {
@@ -177,7 +556,7 @@ const Page: React.FC = () => {
 
     const connectToDropbox = () => {
         const dbx = new DropboxAuth({ fetch: fetch });
-        dbx.setClientId(DROPBOX_APP_KEY);
+        dbx.setClientId(DROPBOX_APP_KEY as string);
         dbx.getAuthenticationUrl('http://localhost:3000/DropboxConnection').then((authUrl) => {
             window.location.href = authUrl as string;
         });
@@ -213,7 +592,6 @@ const Page: React.FC = () => {
             setIsLoading(false);
         }
     };
-
     const fetchAudioFiles = async (accessToken: string, path: string) => {
         setIsLoading(true);
         try {
@@ -241,6 +619,7 @@ const Page: React.FC = () => {
         }
     };
 
+
     const fetchMetadata = async (dbx: Dropbox, filePath: string) => {
         try {
             const { result } = await dbx.filesDownload({ path: filePath });
@@ -267,34 +646,15 @@ const Page: React.FC = () => {
             };
         }
     };
-    const playTrack = async (track: AudioFile, index: number) => {
-        setIsLoading(true);
-        if (audioRef.current && nextAudioRef.current) {
-            let url = cacheRef.current[track.path];
-            if (!url) {
-                const accessToken = localStorage.getItem('dropboxAccessToken');
-                if (accessToken) {
-                    const dbx = new Dropbox({ accessToken });
-                    const { result } = await dbx.filesDownload({ path: track.path });
-                    const blob = (result as any).fileBlob;
-                    url = URL.createObjectURL(blob);
-                    cacheRef.current[track.path] = url;
-                }
-            }
-
-            audioRef.current.src = url;
-            audioRef.current.volume = volume;
-            audioRef.current.play().catch(error => console.error("Playback failed", error));
-            setIsPlaying(true);
-            setCurrentTrack(track);
-        }
-        setIsLoading(false);
-    };
     // const playTrack = async (track: AudioFile, index: number) => {
+    //     if (!audioContextReady) {
+    //         setAudioContextReady(true);
+    //     }
     //     setIsLoading(true);
     //     if (audioRef.current && nextAudioRef.current) {
-    //         let url = cacheRef.current[track.path];
-    //         if (!url) {
+    //         let url = track.path;
+
+    //         if (currentSource === 'dropbox' && !cacheRef.current[track.path]) {
     //             const accessToken = localStorage.getItem('dropboxAccessToken');
     //             if (accessToken) {
     //                 const dbx = new Dropbox({ accessToken });
@@ -306,6 +666,7 @@ const Page: React.FC = () => {
     //         }
 
     //         if (isPlaying) {
+    //             // Crossfade logic
     //             const fadeOutDuration = crossfadeTime * 1000;
     //             const fadeInterval = 50;
     //             let currentTime = 0;
@@ -341,43 +702,58 @@ const Page: React.FC = () => {
     //         setIsPlaying(true);
     //         setCurrentTrack(track);
     //     }
+    //     if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+    //         await audioContextRef.current.resume();
+    //     }
     //     setIsLoading(false);
     // };
 
-    const togglePlayPause = () => {
-        if (audioRef.current) {
-            if (isPlaying) {
-                audioRef.current.pause();
-            } else {
-                audioRef.current.play();
+    const togglePlayPause = async () => {
+        if (!audioContextReady) {
+            setAudioContextReady(true);
+        }
+
+        try {
+            if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+                await audioContextRef.current.resume();
             }
-            setIsPlaying(!isPlaying);
+
+            if (audioRef.current) {
+                if (isPlaying) {
+                    audioRef.current.pause();
+                } else {
+                    await audioRef.current.play();
+                }
+                setIsPlaying(!isPlaying);
+            }
+        } catch (error) {
+            console.error('Error toggling play/pause:', error);
+            setError('Failed to play/pause. Please try again.');
         }
     };
 
     const handleNextTrack = () => {
         const currentIndex = audioFiles.findIndex(file => file.path === currentTrack?.path);
-        if (currentIndex < audioFiles.length - 1) {
-            playTrack(audioFiles[currentIndex + 1], currentIndex + 1);
-        }
+        const nextIndex = (currentIndex + 1) % audioFiles.length;
+        playTrack(audioFiles[nextIndex], nextIndex);
     };
 
     const handlePreviousTrack = () => {
         const currentIndex = audioFiles.findIndex(file => file.path === currentTrack?.path);
-        if (currentIndex > 0) {
-            playTrack(audioFiles[currentIndex - 1], currentIndex - 1);
-        }
+        const previousIndex = (currentIndex - 1 + audioFiles.length) % audioFiles.length;
+        playTrack(audioFiles[previousIndex], previousIndex);
     };
 
-    // const handleTimeUpdate = () => {
-    //     if (audioRef.current) {
-    //         setCurrentTime(audioRef.current.currentTime);
 
-    // 
     const handleTimeUpdate = () => {
         if (audioRef.current) {
             setCurrentTime(audioRef.current.currentTime);
             setDuration(audioRef.current.duration);
+
+            // Start crossfade when approaching the end of the track
+            if (audioRef.current.duration - audioRef.current.currentTime <= crossfadeTime && nextTrack && !crossfadeIntervalRef.current) {
+                startCrossfade();
+            }
         }
     };
 
@@ -480,6 +856,53 @@ const Page: React.FC = () => {
         }
         return file.name.replace(/\.[^/.]+$/, ""); // Remove file extension
     };
+    // handling local files
+    const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files;
+        if (files) {
+            const folderName = files[0].webkitRelativePath.split('/')[0];
+            const audioFiles = Array.from(files).filter(file =>
+                file.type.startsWith('audio/') || file.name.match(/\.(mp3|wav|ogg|flac)$/i)
+            );
+
+            const newFolder: LocalFolder = { name: folderName, files: audioFiles };
+            setLocalFolders(prev => [...prev, newFolder]);
+
+            await fetchLocalAudioFiles(newFolder);
+        }
+    };
+
+    const fetchLocalAudioFiles = async (folder: LocalFolder) => {
+        setIsLoading(true);
+        try {
+            const audioFiles = await Promise.all(folder.files.map(async (file) => {
+                const metadata = await mm.parseBlob(file);
+                return {
+                    name: file.name,
+                    path: URL.createObjectURL(file),
+                    size: file.size,
+                    artist: metadata.common.artist || 'Unknown Artist',
+                    album: metadata.common.album || 'Unknown Album',
+                    title: metadata.common.title || 'Unknown Title',
+                    imageUrl: metadata.common.picture && metadata.common.picture.length > 0
+                        ? URL.createObjectURL(new Blob([metadata.common.picture[0].data], { type: metadata.common.picture[0].format }))
+                        : '/api/placeholder/300/300',
+                    duration: metadata.format.duration || 0,
+                    file: file
+                };
+            }));
+            setLocalAudioFiles(audioFiles);
+            setAudioFiles(audioFiles);
+            setCurrentFolder(folder.name);
+            setError(null);
+            setCurrentSource('local');
+        } catch (err) {
+            console.error('Error fetching local audio files:', err);
+            setError('Failed to process local audio files. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     return (
         <div className={`flex flex-col h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-white transition-colors duration-200`}>
@@ -514,6 +937,34 @@ const Page: React.FC = () => {
                             </ul>
                         </>
                     )}
+                    <>
+                        <h2 className="text-md font-semibold mt-4 mb-2">Local Files</h2>
+                        <Button onClick={() => fileInputRef.current?.click()} className="mb-2">
+                            <LucideUpload size={25} className="mr-2" />
+
+                        </Button>
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            webkitdirectory=""
+                            directory=""
+                            onChange={handleFileImport}
+                            style={{ display: 'none' }}
+                        />
+                        <ul className="space-y-2">
+                            {localFolders.map((folder, index) => (
+                                <li
+                                    key={index}
+                                    className={`flex items-center p-2 rounded cursor-pointer ${currentFolder === folder.name && currentSource === 'local' ? 'bg-gray-300 dark:bg-gray-700' : 'hover:bg-gray-300 dark:hover:bg-gray-700'}`}
+                                    onClick={() => fetchLocalAudioFiles(folder)}
+                                >
+                                    <Folder size={20} className="mr-2" />
+                                    <span>{folder.name}</span>
+                                </li>
+                            ))}
+                        </ul>
+
+                    </>
                 </div>
                 <div className="flex-1 p-4 overflow-y-auto">
                     <h2 className="text-xl font-semibold mb-4">Tracks</h2>
@@ -542,9 +993,34 @@ const Page: React.FC = () => {
                             </li>
                         ))}
                     </ul>
+                    {/* ui to render our 3d code */}
+                    {showVisualizer && (
+                        <div
+                            ref={visualizerContainerRef}
+                            className="absolute inset-0 pointer-events-none"
+                            style={{ zIndex: 1 }}
+                        ></div>
+                    )}
+                    {/* end of 3D rendering */}
                 </div>
             </div>
             <div className="bg-gray-200 dark:bg-gray-800 p-4">
+                <div className="flex items-center justify-between mt-2">
+                    <div className="flex items-center space-x-2">
+                        <Button onClick={() => setShowVisualizer(!showVisualizer)}>
+                            <BarChart2 size={20} />
+                        </Button>
+                        {Object.keys(visualizers).map((name) => (
+                            <Button
+                                key={name}
+                                onClick={() => changeVisualizer(name)}
+                                className={currentVisualizer === name ? 'bg-blue-700 dark:bg-blue-800' : ''}
+                            >
+                                {visualizers[name].name}
+                            </Button>
+                        ))}
+                    </div>
+                </div>
                 <div className="flex flex-col md:flex-row items-center justify-between mb-4">
                     <div className="flex items-center mb-4 md:mb-0">
                         {currentTrack && (
@@ -571,7 +1047,7 @@ const Page: React.FC = () => {
                             max={1}
                             value={volume}
                             onChange={handleVolumeChange}
-                            className="w-24"
+                            className="w-[20rem]"
                         />
                     </div>
                     <Button onClick={() => setShowSettings(!showSettings)} className="mt-4 md:mt-0">
@@ -599,7 +1075,8 @@ const Page: React.FC = () => {
                             id="crossfade"
                             type="number"
                             min={0}
-                            max={10}
+
+                            max={20}
                             value={crossfadeTime}
                             onChange={(e) => setCrossfadeTime(Number(e.target.value))}
                             className="bg-gray-700 text-white px-2 py-1 rounded"
@@ -644,16 +1121,17 @@ const Page: React.FC = () => {
                     </div>
                     <div className="grid grid-cols-10 gap-2">
                         {[32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000].map((freq, index) => (
-                            <div key={freq} className="flex flex-col items-center">
+                            <div key={index} className="flex flex-col items-center">
                                 <input
                                     type="range"
-                                    min="-12"
-                                    max="12"
+                                    min="-18"
+                                    step="0.01"
+                                    max="18"
                                     value={equalizer[index]}
                                     onChange={(e) => handleEqualizerChange(index, Number(e.target.value))}
                                     className="w-6 h-24 appearance-none bg-gray-700 rounded-full outline-none"
                                     style={{
-                                        writingMode: 'bt-lr',
+                                        // writingMode: 'bt-lr',
                                         WebkitAppearance: 'slider-vertical',
                                     }}
                                 />
@@ -667,11 +1145,12 @@ const Page: React.FC = () => {
                 </div>
             )}
             <audio
+                crossOrigin='anonymous'
                 ref={audioRef}
                 onTimeUpdate={handleTimeUpdate}
                 onEnded={handleNextTrack}
             />
-            <audio ref={nextAudioRef} />
+            <audio ref={nextAudioRef} crossOrigin='anonymous' />
             <canvas ref={canvasRef} className="absolute bottom-24 left-4 w-64 h-64" />
         </div>
     );
