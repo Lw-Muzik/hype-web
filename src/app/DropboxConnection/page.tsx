@@ -4,14 +4,15 @@ import { Dropbox, DropboxAuth } from 'dropbox';
 import { Play, Pause, SkipBack, SkipForward, BarChart2, Volume2, Settings, Folder, Save, Loader, Moon, Sun, Upload, File, LucideUpload } from 'lucide-react';
 import * as mm from 'music-metadata-browser';
 import * as THREE from 'three';
-
-const DROPBOX_APP_KEY = process.env.APP_KEY;
-// Place this at the top of your file or in a separate types file
 declare module 'react' {
     interface InputHTMLAttributes<T> extends HTMLAttributes<T> {
-        webkitdirectory?: boolean;
+        webkitdirectory?: string;
+        directory?:string;
     }
 }
+const DROPBOX_APP_KEY = process.env.APP_KEY;
+// // Place this at the top of your file or in a separate types file
+
 interface AudioFile {
     name: string;
     path: string;
@@ -979,7 +980,8 @@ const Page: React.FC = () => {
                         <input
                             type="file"
                             ref={fileInputRef}
-                            webkitdirectory={true}
+                            webkitdirectory=""
+                            directory=""
                             onChange={handleFileImport}
                             style={{ display: 'none' }}
                         />
